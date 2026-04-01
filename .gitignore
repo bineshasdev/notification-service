@@ -1,0 +1,9 @@
+node_modules/
+dist/
+
+# Local environment variables
+.env
+.env.local
+
+# Prisma
+prisma/migrations/dev.db

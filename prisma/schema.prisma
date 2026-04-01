@@ -1,0 +1,171 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+enum Channel {
+  EMAIL
+  SMS
+  PUSH
+  INAPP
+  WHATSAPP
+}
+
+enum EventCategory {
+  AUTH
+  USER_MANAGEMENT
+  TENANT
+  BILLING
+  DOCUMENT
+  SYSTEM
+}
+
+enum NotificationType {
+  USER
+  SYSTEM
+  TENANT
+}
+
+enum NotificationCategory {
+  MESSAGE
+  WARNING
+  ANNOUNCEMENT
+  ALERT
+}
+
+enum DeliveryStatus {
+  PENDING
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  RETRYING
+  READ
+  SCHEDULED
+}
+
+// ── Notification Event (system-seeded, immutable codes) ──────────────────────
+
+model NotificationEvent {
+  id              String         @id @default(uuid()) @db.Uuid
+  code            String         @unique        // e.g. "auth.welcome"
+  name            String                        // "Welcome Email"
+  description     String?
+  category        EventCategory
+  scope           NotificationType @default(USER) // USER, TENANT, SYSTEM
+  defaultChannels Channel[]
+  variables       Json           @default("[]") // [{name,description,required,sampleValue}]
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  templates NotificationTemplate[]
+
+  @@index([category])
+  @@index([isActive])
+  @@map("notification_events")
+}
+
+// ── Template (system defaults + tenant copy-on-write overrides) ──────────────
+
+model NotificationTemplate {
+  id          String               @id @default(uuid()) @db.Uuid
+  eventCode   String
+  event       NotificationEvent    @relation(fields: [eventCode], references: [code])
+  channel     Channel
+  tenantId    String?              @db.Uuid       // null = system default
+  name        String
+  subject     String?                              // email/push subject
+  body        String                               // plain text / handlebars
+  bodyHtml    String?                              // rich HTML (email)
+  isSystem    Boolean              @default(false) // true = only superadmin can edit
+  isActive    Boolean              @default(true)
+  version     Int                  @default(1)
+  metadata    Json?                                // extra config
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  notifications Notification[]
+
+  @@unique([eventCode, channel, tenantId])
+  @@index([eventCode])
+  @@index([tenantId])
+  @@index([isSystem])
+  @@map("notification_templates")
+}
+
+// ── Sent notification record ─────────────────────────────────────────────────
+
+model Notification {
+  id             String               @id @default(uuid()) @db.Uuid
+  tenantId       String               @db.Uuid
+  userId         String?              @db.Uuid
+  eventCode      String?                              // which event triggered this
+  type           NotificationType
+  category       NotificationCategory @default(MESSAGE)
+  channel        Channel
+  templateId     String?              @db.Uuid
+  template       NotificationTemplate? @relation(fields: [templateId], references: [id])
+  subject        String?
+  body           String
+  metadata       Json?
+  status         DeliveryStatus       @default(PENDING)
+  readAt         DateTime?
+  scheduledAt    DateTime?
+  expiresAt      DateTime?
+  idempotencyKey String?              @unique
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  deliveryLogs DeliveryLog[]
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([tenantId, userId, status])
+  @@index([tenantId, type])
+  @@index([eventCode])
+  @@map("notifications")
+}
+
+// ── Delivery log ─────────────────────────────────────────────────────────────
+
+model DeliveryLog {
+  id               String         @id @default(uuid()) @db.Uuid
+  notificationId   String         @db.Uuid
+  notification     Notification   @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  channel          Channel
+  attempt          Int            @default(1)
+  status           DeliveryStatus
+  providerResponse Json?
+  error            String?
+  deliveredAt      DateTime?
+  createdAt        DateTime       @default(now())
+
+  @@index([notificationId])
+  @@map("delivery_logs")
+}
+
+// ── User channel preferences ─────────────────────────────────────────────────
+
+model UserPreference {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  userId      String   @db.Uuid
+  channel     Channel
+  enabled     Boolean  @default(true)
+  dndStart    String?
+  dndEnd      String?
+  dndTimezone String?  @default("UTC")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, userId, channel])
+  @@index([tenantId, userId])
+  @@map("user_preferences")
+}

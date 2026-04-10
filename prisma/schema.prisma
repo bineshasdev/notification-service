@@ -83,7 +83,8 @@ model NotificationTemplate {
   name        String
   subject     String?                              // email/push subject
   body        String                               // plain text / handlebars
-  bodyHtml    String?                              // rich HTML (email)
+  bodyMjml    String?                              // MJML source (email only — compiled to bodyHtml on save)
+  bodyHtml    String?                              // compiled HTML (email)
   isSystem    Boolean              @default(false) // true = only superadmin can edit
   isActive    Boolean              @default(true)
   version     Int                  @default(1)

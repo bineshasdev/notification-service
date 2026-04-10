@@ -1,25 +1,70 @@
 import Handlebars from 'handlebars'
+import mjml2html from 'mjml'
+import { logger } from './logger'
 
-// Register helpers
+// ── Handlebars helpers ────────────────────────────────────────────────────────
+
 Handlebars.registerHelper('upper', (str: string) => str?.toUpperCase())
 Handlebars.registerHelper('lower', (str: string) => str?.toLowerCase())
-Handlebars.registerHelper('date', (date: string) =>
+Handlebars.registerHelper('date',  (date: string) =>
   date ? new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '',
 )
 
-const templateCache = new Map<string, HandlebarsTemplateDelegate>()
+const hbsCache  = new Map<string, HandlebarsTemplateDelegate>()
+const mjmlCache = new Map<string, string>()
 
+// ── MJML → HTML ───────────────────────────────────────────────────────────────
+
+/**
+ * Compile MJML source to responsive HTML.
+ * Results are cached by source string — safe because MJML output is deterministic.
+ * Handlebars `{{variables}}` in the source pass through unchanged.
+ */
+export function compileMjml(mjmlSource: string): string {
+  const cached = mjmlCache.get(mjmlSource)
+  if (cached) return cached
+
+  const { html, errors } = mjml2html(mjmlSource, {
+    minify:            false,
+    validationLevel:   'soft',  // warn but still compile on non-fatal errors
+    beautify:          false,
+  })
+
+  if (errors.length > 0) {
+    errors.forEach((e: { formattedMessage: string }) => logger.warn('[MJML]', { message: e.formattedMessage }))
+  }
+
+  mjmlCache.set(mjmlSource, html)
+  return html
+}
+
+// ── Handlebars rendering ──────────────────────────────────────────────────────
+
+/**
+ * Render a Handlebars template string with the given variables.
+ */
 export function renderTemplate(templateStr: string, variables: Record<string, unknown> = {}): string {
-  let compiled = templateCache.get(templateStr)
+  let compiled = hbsCache.get(templateStr)
   if (!compiled) {
     compiled = Handlebars.compile(templateStr, { noEscape: false })
-    templateCache.set(templateStr, compiled)
+    hbsCache.set(templateStr, compiled)
   }
   return compiled(variables)
 }
 
+/**
+ * Compile MJML → HTML, then render Handlebars variables.
+ * Use this when the template source is MJML.
+ */
+export function renderMjmlTemplate(mjmlSource: string, variables: Record<string, unknown> = {}): string {
+  const html = compileMjml(mjmlSource)
+  return renderTemplate(html, variables)
+}
+
+// ── Variable extraction ───────────────────────────────────────────────────────
+
 export function extractVariables(templateStr: string): string[] {
-  const ast = Handlebars.parse(templateStr)
+  const ast  = Handlebars.parse(templateStr)
   const vars: string[] = []
 
   function traverse(node: hbs.AST.Node) {

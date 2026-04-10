@@ -62,6 +62,7 @@ export interface CreateTemplateDto {
   channel: Channel
   subject?: string
   body: string
+  bodyMjml?: string
   bodyHtml?: string
   tenantId?: string
   isSystem?: boolean
@@ -73,6 +74,7 @@ export interface CustomizeTemplateDto {
   name?: string
   subject?: string
   body?: string
+  bodyMjml?: string
   bodyHtml?: string
 }
 
@@ -80,6 +82,7 @@ export interface UpdateTemplateDto {
   name?: string
   subject?: string
   body?: string
+  bodyMjml?: string
   bodyHtml?: string
   isActive?: boolean
 }

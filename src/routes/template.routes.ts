@@ -9,6 +9,9 @@ router.get('/',                    templateController.list)
 router.get('/event/:eventCode',    templateController.listByEvent)
 router.get('/:id',                 templateController.getById)
 
+// Live preview — render template with supplied variables (any authenticated role)
+router.post('/preview',            templateController.preview)
+
 // Tenant admin: customize a template (copy-on-write)
 router.post('/customize',          requireRole('tenantadmin', 'superadmin'), templateController.customize)
 

@@ -2,6 +2,15 @@ import { prisma } from '../config/database'
 import type { Channel } from '@prisma/client'
 import type { UpdateTemplateDto } from '../types'
 import { AppError } from '../middleware/error'
+import { compileMjml } from '../utils/template.engine'
+
+/** If bodyMjml is present, compile it to bodyHtml (overwrites any passed-in bodyHtml). */
+function resolveMjml(dto: UpdateTemplateDto): UpdateTemplateDto {
+  if (dto.bodyMjml) {
+    return { ...dto, bodyHtml: compileMjml(dto.bodyMjml) }
+  }
+  return dto
+}
 
 export class TemplateService {
   // List all templates for an event (system + tenant overrides)
@@ -68,9 +77,10 @@ export class TemplateService {
     if (existing) {
       // Tenant already has a copy — update it
       if (existing.isSystem) throw new AppError('Cannot edit system template directly', 403)
+      const resolved = resolveMjml(dto)
       return prisma.notificationTemplate.update({
         where: { id: existing.id },
-        data: { ...dto, version: { increment: 1 } },
+        data: { ...resolved, version: { increment: 1 } },
       })
     }
 
@@ -79,16 +89,17 @@ export class TemplateService {
       where: { eventCode, channel, tenantId: null, isActive: true },
     })
 
-    const base = systemTemplate ?? {}
+    const resolved = resolveMjml(dto)
     return prisma.notificationTemplate.create({
       data: {
         eventCode,
         channel,
         tenantId,
-        name:     dto.name     ?? (systemTemplate?.name ?? event.name + ' – ' + channel),
-        subject:  dto.subject  ?? systemTemplate?.subject ?? null,
-        body:     dto.body     ?? systemTemplate?.body ?? '',
-        bodyHtml: dto.bodyHtml ?? systemTemplate?.bodyHtml ?? null,
+        name:     resolved.name     ?? (systemTemplate?.name ?? event.name + ' – ' + channel),
+        subject:  resolved.subject  ?? systemTemplate?.subject ?? null,
+        body:     resolved.body     ?? systemTemplate?.body ?? '',
+        bodyMjml: resolved.bodyMjml ?? systemTemplate?.bodyMjml ?? null,
+        bodyHtml: resolved.bodyHtml ?? systemTemplate?.bodyHtml ?? null,
         isSystem: false,
         isActive: true,
         version:  1,
@@ -101,9 +112,10 @@ export class TemplateService {
     const template = await prisma.notificationTemplate.findUnique({ where: { id } })
     if (!template) throw new AppError('Template not found', 404)
     if (!template.isSystem) throw new AppError('This is not a system template', 400)
+    const resolved = resolveMjml(dto)
     return prisma.notificationTemplate.update({
       where: { id },
-      data: { ...dto, version: { increment: 1 } },
+      data: { ...resolved, version: { increment: 1 } },
     })
   }
 

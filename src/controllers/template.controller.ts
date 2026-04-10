@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { templateService } from '../services/template.service'
+import { renderTemplate, renderMjmlTemplate } from '../utils/template.engine'
 
 const CHANNELS = ['EMAIL', 'SMS', 'PUSH', 'INAPP', 'WHATSAPP'] as const
 
@@ -10,6 +11,7 @@ const customizeSchema = z.object({
   name:      z.string().optional(),
   subject:   z.string().optional(),
   body:      z.string().optional(),
+  bodyMjml:  z.string().optional(),
   bodyHtml:  z.string().optional(),
 })
 
@@ -17,12 +19,21 @@ const updateSystemSchema = z.object({
   name:     z.string().optional(),
   subject:  z.string().optional(),
   body:     z.string().optional(),
+  bodyMjml: z.string().optional(),
   bodyHtml: z.string().optional(),
 })
 
 const resetSchema = z.object({
   eventCode: z.string().min(1),
   channel:   z.enum(CHANNELS),
+})
+
+const previewSchema = z.object({
+  subject:   z.string().optional(),
+  body:      z.string().default(''),
+  bodyMjml:  z.string().optional(),
+  bodyHtml:  z.string().optional(),
+  variables: z.record(z.string(), z.string()).default({}),
 })
 
 export const templateController = {
@@ -63,6 +74,23 @@ export const templateController = {
     try {
       const dto = updateSystemSchema.parse(req.body)
       res.json(await templateService.updateSystem(req.params.id, dto))
+    } catch (err) { next(err) }
+  },
+
+  // Render a template with supplied variables — used by the live preview UI
+  async preview(req: Request, res: Response, next: NextFunction) {
+    try {
+      const dto  = previewSchema.parse(req.body)
+      const vars = dto.variables
+
+      const subject  = dto.subject  ? renderTemplate(dto.subject, vars) : undefined
+      const body     = renderTemplate(dto.body, vars)
+      // bodyMjml takes priority: compile MJML → HTML, then render variables
+      const bodyHtml = dto.bodyMjml
+        ? renderMjmlTemplate(dto.bodyMjml, vars)
+        : dto.bodyHtml ? renderTemplate(dto.bodyHtml, vars) : undefined
+
+      res.json({ subject, body, bodyHtml })
     } catch (err) { next(err) }
   },
 
